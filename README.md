@@ -16,6 +16,7 @@ skills/
 | Skill | Version | Description |
 |---|---|---|
 | [panoptos-lgtm](skills/panoptos-lgtm/SKILL.md) | 1.1.0 | Token-efficient Panoptos LGTM router — Grafana, Loki, Mimir/Cortex, Tempo (LogQL/PromQL/TraceQL), production triage. |
+| [trace-analyzer](skills/trace-analyzer/SKILL.md) | 1.0.0 | Senior-SRE trace analysis framework — critical-path/root-cause/antipattern report with severity coding and opt-in Mermaid diagrams. |
 
 ## Versioning
 

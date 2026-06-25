@@ -15,7 +15,7 @@ skills/
 
 | Skill | Version | Description |
 |---|---|---|
-| [panoptos-lgtm](skills/panoptos-lgtm/SKILL.md) | 1.0.0 | Token-efficient Panoptos LGTM router — Grafana, Loki, Mimir/Cortex, Tempo (LogQL/PromQL/TraceQL), production triage. |
+| [panoptos-lgtm](skills/panoptos-lgtm/SKILL.md) | 1.1.0 | Token-efficient Panoptos LGTM router — Grafana, Loki, Mimir/Cortex, Tempo (LogQL/PromQL/TraceQL), production triage. |
 
 ## Versioning
 

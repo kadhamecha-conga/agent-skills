@@ -1,6 +1,6 @@
 ---
 name: panoptos-lgtm
-version: 1.0.0
+version: 1.1.0
 description: "Token-efficient Panoptos LGTM router for Claude. Use for Grafana, Loki logs, Mimir/Cortex metrics, Tempo traces, LogQL, PromQL, TraceQL, errors, latency, 5xxs, or production triage. Load topic files only when needed."
 ---
 
@@ -42,72 +42,54 @@ Every application signal (metrics in `cortex`, logs in `loki`/`loki-customer`) i
 |---|---|---|---|
 | Product / domain | `service_namespace` | "product", "team", "domain" | `platform`, `revenue`, `ai-platform` |
 | Service | `service_name` | "service", "API", "worker" | `platform-objectdb-api`, `revenue-quote-api` |
-| Environment | `deployment_environment` | "env", "environment" | `prod`, `rls03`, `staging`, `dev` |
+| Environment | `deployment_environment` | "env", "environment", "dev"→`rls03`, "qa"→`rls04` | `prod`, `rls04`, `rls03`, `staging` |
 
-## Product Namespace Catalog (service_namespace)
+## Product Namespace Index (service_namespace)
 
-### Business Products — Have Cortex Metrics + Loki Logs
+Compact routing index. **Resolve exact services live** via `list_prometheus_label_values` (see Service Name Resolution) — don't trust hard-coded service lists. For deep per-namespace detail (sample services, product areas, counts), read `references/catalog.md`.
 
-| Namespace | Product area | Sample services | Notes |
-|---|---|---|---|
-| `platform` | Core platform (auth, objectdb, scheduler, search, email, pubsub, datasync, workflows, recyclebin, custom code, licensing, onboarding) | `platform-objectdb-api`, `platform-auth-api`, `platform-search-api`, `platform-scheduler-api`, `platform-email-api`, `platform-datasync-api`, `platform-messaging-api` | ~100 services. Largest namespace. Service names prefixed `platform-*` |
-| `revenue` | Revenue management (CPQ, pricing, catalog, orders, renewals, rebates, incentives, config-publisher) | `revenue-quote-api`, `revenue-catalog-api`, `pricing-engine`, `config-engine`, `order-api`, `cart-api` | ~37 services. Mix of `revenue-*` prefixed and standalone names |
-| `ai-platform` | AI/ML platform (copilot, extraction, OCR, vectorization, redline, agent services) | `ai-platform-db-api`, `ai-platform-config-service`, `conga-copilot-backend-api`, `ai-platform-usage-api-services` | ~9 services with cortex metrics. Many more workers are Loki-only |
-| `contracts` | Contracts lifecycle (batch, cycletime, email-parsing, onboarding) | `conga-contracts-api`, `conga-contracts-batch-worker`, `conga-contracts-lifecycle-worker` | ~7 services. Prefixed `conga-contracts-*` |
-| `conga-sign` | Conga Sign product (signing, connectors, callbacks, audit, upgrades) | `sign-api`, `sign-worker`, `sign-audit-api`, `sign-callback-api`, `conga-sign-connector-worker` | ~8 services |
-| `congasign` | Legacy Conga Sign namespace | `conga-sign-audit-worker`, `signcallback-worker` | ~3 services. Overlaps with `conga-sign`; check both |
-| `core-apps` | Composer, Approvals, Drive, integrations (box, sharepoint, sftp, webhook, workflow) | `approvals-web`, `approvals-worker`, `congadrive-web`, `composerapi`, `boxbasilisk-web` | ~25 services. Animal-themed names (boxbasilisk, datadolphin, workflowwhale, etc.) |
-| `xauthor` | XAuthor (Excel/Word/GDocs authoring, templates, review) | `conga-xauthor-api`, `conga-xauthor-gdocs-api`, `conga-review-api`, `conga-xauthor-template-management-api` | ~6 services |
-| `docgen` | Document generation (composer, conductor, query builder, scheduler, workflow) | `composerapi`, `conductor`, `core`, `querybuilder`, `weball`, `workflow` | ~10 real services. ⚠️ Has duplicates with `;otelcol-contrib` suffix — filter with `service_name!~".*;otelcol-contrib"` to avoid double-counting |
-| `maf` | Managed app framework (billing, invoicing, orders within MAF) | `billing-management`, `invoice-management`, `maf-data-change-worker`, `order-api` | ~7 services |
-| `esign` | E-sign integration | `conga-esign-api`, `conga-esign-worker` | 2 services |
-| `srm` | Supplier relationship management | `rls-srm-api`, `rls-srm-worker` | 2 services |
-| `conversations` | Conversations product | `conga-conversations-api` | 1 service |
-| `plat-enablement` | Platform enablement / migration hub | `migrationhub-batch-processor`, `migrationhub-data-ingestion` | 2 services |
-| `ccdatasync` | Contracts datasync | `conga.contracts.datasync.api`, `conga-contracts-datasync-worker` | 2 services |
+**Cortex metrics + Loki logs:** `platform` (~100 svc, largest, `platform-*`), `revenue`, `ai-platform`, `contracts`, `conga-sign`, `congasign`, `core-apps`, `xauthor`, `docgen`, `maf`, `esign`, `srm`, `conversations`, `plat-enablement`, `ccdatasync`
 
-### Business Products — Loki-Only (No Cortex Metrics)
+**Loki-only (no Cortex — use `count_over_time` for RED):** `cci`, `cci-standalone`, `clm`, `billing`, `invoicing`, `testauthor`, `approvals`, `tidb`
 
-For these, use Loki `count_over_time` for RED-style signals. Query `loki` or `loki-customer`.
+**Infra namespaces (NOT product — don't confuse):** `cluster-observability`, `sign`, `contractssf`, `argocd`, `argo-workflows`, `kube-system`, `cert-manager`, `karpenter`, `external-secrets`, `rls-operator`, `rls-app`, `kong`, `nginx-ingress`, `ingress-nginx`
 
-| Namespace | Notes |
-|---|---|
-| `cci`, `cci-standalone` | Conga Contract Intelligence. Many workers (extraction, OCR, search, polling). No cortex metrics at all |
-| `clm` | Contract Lifecycle Management |
-| `billing` | Billing (has `Billing Management` service_name in cortex under `billing` namespace but very thin) |
-| `invoicing` | Invoicing (has `Invoice Management` in cortex but very thin) |
-| `testauthor` | Test authoring |
-| `approvals` | Approvals (Loki logs only; cortex metrics are under `core-apps` namespace for approvals-web/worker) |
-| `tidb` | TiDB shared database. Logs live in one shared home env per stack; discover with `sum by (deployment_environment) (count_over_time({service_namespace="tidb"}[5m]))` |
+**loki-infra datasource only:** `panoptos` (LGTM stack: cortex-*, loki-*, tempo-*, grafana), `cluster-observability` (otelcol-*, kube-prometheus-stack-*)
 
-### Infra Namespaces (Not Product — Don't Confuse)
+### Critical gotchas (keep in mind when routing)
 
-| Namespace | What it is |
-|---|---|
-| `cluster-observability` | OTel collectors, prometheus-proxy. In both `loki` and `loki-infra` |
-| `sign` | ⚠️ Cluster-level infra for Sign clusters (kube-state-metrics, node-exporter, nginx, etc.) — NOT the Sign product. The Sign product is `conga-sign` or `congasign` |
-| `contractssf` | Cluster-level K8s metrics (apiserver, kubelet, kube-state-metrics) for ContractsSF clusters — NOT product application metrics |
-| `argocd`, `argo-workflows` | GitOps / CI-CD infra |
-| `kube-system`, `cert-manager`, `karpenter`, `external-secrets` | Kubernetes system components |
-| `rls-operator`, `rls-app` | RLS cluster operators |
-| `kong`, `nginx-ingress`, `ingress-nginx` | Ingress layer. Kong metrics exist in `cortex` but under `kong_http_requests_total` without `service_namespace` — use `route` label instead |
-
-### Loki-Infra Namespace (loki-infra datasource only)
-
-| Namespace | Services |
-|---|---|
-| `panoptos` | LGTM stack components: `cortex-distributor`, `cortex-ingester`, `cortex-compactor`, `cortex-querier`, `cortex-query-frontend`, `cortex-store-gateway`, `cortex-ruler`, `cortex-alertmanager`, `cortex-nginx`, `loki-distributor`, `loki-ingester`, `loki-querier`, `loki-compactor`, `loki-gateway`, `loki-query-frontend`, `loki-ruler`, `loki-index-gateway`, `loki-infra-*` (self-monitoring variants), `tempo-distributor`, `tempo-ingester`, `tempo-querier`, `tempo-compactor`, `tempo-gateway`, `tempo-query-frontend`, `tempo-metrics-generator`, `grafana`, `grafana-mcp-ops` |
-| `cluster-observability` | `otelcol-logs`, `otelcol-metrics`, `otelcol-traces`, `internal-agent-ot-collector-contrib`, `kube-prometheus-stack-*`, `kong-proxy`, `kong-grpc-proxy` |
+- `sign` namespace = cluster infra for Sign clusters, **NOT** the Sign product (that's `conga-sign` / `congasign` — check both).
+- `congasign` overlaps `conga-sign` — check both for Sign product signals.
+- `docgen` has duplicate series with a `;otelcol-contrib` suffix — filter `service_name!~".*;otelcol-contrib"` to avoid double-counting.
+- `kong` metrics live in `cortex` as `kong_http_requests_total` **without** `service_namespace` — filter by `route` label instead.
+- `approvals` logs are in the `approvals` namespace (Loki-only), but its cortex metrics are under `core-apps`.
+- `tidb` logs live in one shared home env per stack — discover with `sum by (deployment_environment) (count_over_time({service_namespace="tidb"}[5m]))`.
 
 ## Environment Catalog (deployment_environment)
+
+### Environment Aliases (resolve these first)
+
+When the user names an environment by its informal tier, map it to the literal `deployment_environment` value **before** querying. These aliases are authoritative:
+
+| User says | Use `deployment_environment` |
+|---|---|
+| "dev", "development" | `rls03` |
+| "qa", "QA" | `rls04` |
+| "prod", "production" | `prod` |
+| "perf", "performance" | `rls07` |
+| "staging" | `staging` (Loki-only) |
+
+If the user gives a literal `rls0x`/env value, use it as-is and skip aliasing.
 
 ### In Cortex
 
 | Tier | Environments |
 |---|---|
 | Production | `prod` |
-| QA / Staging | `rls04` (QA), `rls03` (dev), `rls05`, `rls06`, `rls07` (perf) |
-| Dev | `dev`, `dev1`, `dev2`, `dev3`, `rlsdev`, `contractssf-dev`, `ephemeral`, `local` |
+| QA | `rls04` |
+| Dev | `rls03` |
+| Staging / perf | `rls05`, `rls06`, `rls07` (perf) |
+| Other dev | `dev`, `dev1`, `dev2`, `dev3`, `rlsdev`, `contractssf-dev`, `ephemeral`, `local` |
 | CCI-specific | `cci-beta-1030`, `cci-legacy-stage`, `cci-yama-beta-1030` |
 | Yama | `yama-dev-1100` |
 | Azure | `rlsaz06` |
@@ -183,6 +165,7 @@ query_prometheus(datasourceUid="cortex", expr='group by (__name__) ({service_nam
 | PromQL, metrics, RED, latency, Kong/nginx 5xx, Kubernetes metrics | `references/mimir-promql.md` (check ingress rollout first — Kong vs nginx) |
 | Trace IDs, Tempo, TraceQL, deeplinks, correlation | `references/tempo-traceql.md` |
 | Long windows, 30 days, all errors over a week, timeout/truncation/max_samples | `references/wide-window-guard.md` |
+| Deep namespace detail — exact sample services, product areas, per-namespace counts, full LGTM component list | `references/catalog.md` (but prefer live MCP discovery) |
 | General triage flow or routing | stay in this file unless detail is needed |
 
 ## "Which service is failing?" — generic failure triage

@@ -1,7 +1,7 @@
 ---
 name: panoptos-lgtm
-version: 1.1.0
-description: "Token-efficient Panoptos LGTM router for Claude. Use for Grafana, Loki logs, Mimir/Cortex metrics, Tempo traces, LogQL, PromQL, TraceQL, errors, latency, 5xxs, or production triage. Load topic files only when needed."
+version: 1.3.0
+description: "Panoptos observability investigator over Grafana (Loki logs, Mimir/Cortex + Prometheus metrics, Tempo traces). Use whenever the user asks about logs, errors or exceptions, 5xx / 500s, latency or slowness, error rate, request volume, CPU or memory, dashboards, a failing or unhealthy service, a production incident, or root-cause analysis (RCA) — for any product, service, or environment (dev=rls03, qa=rls04, prod). Writes and routes LogQL / PromQL / TraceQL to the correct datasource. Loads topic reference files only when needed."
 ---
 
 # Panoptos LGTM Router
@@ -42,13 +42,15 @@ Every application signal (metrics in `cortex`, logs in `loki`/`loki-customer`) i
 |---|---|---|---|
 | Product / domain | `service_namespace` | "product", "team", "domain" | `platform`, `revenue`, `ai-platform` |
 | Service | `service_name` | "service", "API", "worker" | `platform-objectdb-api`, `revenue-quote-api` |
-| Environment | `deployment_environment` | "env", "environment", "dev"→`rls03`, "qa"→`rls04` | `prod`, `rls04`, `rls03`, `staging` |
+| Environment | `deployment_environment` | "env", "environment" | `prod`, `rls04`, `rls03`, `staging` |
+
+> **Environment aliases** are in the `understanding-agent-space-deployment-environment-aliases` memory (always in context). Resolve friendly names (dev, qa, prod, perf, staging) using that memory before querying.
 
 ## Product Namespace Index (service_namespace)
 
-Compact routing index. **Resolve exact services live** via `list_prometheus_label_values` (see Service Name Resolution) — don't trust hard-coded service lists. For deep per-namespace detail (sample services, product areas, counts), read `references/catalog.md`.
+Compact routing index. **Resolve exact services live** via `list_prometheus_label_values` (see Service Name Resolution) — don't trust hard-coded service lists. Per-namespace service catalogs for `platform`, `revenue`, and `ai-platform` are in their respective memories (always in context).
 
-**Cortex metrics + Loki logs:** `platform` (~100 svc, largest, `platform-*`), `revenue`, `ai-platform`, `contracts`, `conga-sign`, `congasign`, `core-apps`, `xauthor`, `docgen`, `maf`, `esign`, `srm`, `conversations`, `plat-enablement`, `ccdatasync`
+**Cortex metrics + Loki logs:** `platform`, `revenue`, `ai-platform`, `contracts`, `conga-sign`, `congasign`, `core-apps`, `xauthor`, `docgen`, `maf`, `esign`, `srm`, `conversations`, `plat-enablement`, `ccdatasync`
 
 **Loki-only (no Cortex — use `count_over_time` for RED):** `cci`, `cci-standalone`, `clm`, `billing`, `invoicing`, `testauthor`, `approvals`, `tidb`
 
@@ -67,28 +69,18 @@ Compact routing index. **Resolve exact services live** via `list_prometheus_labe
 
 ## Environment Catalog (deployment_environment)
 
-### Environment Aliases (resolve these first)
+> The **friendly-name aliases** (dev, qa, prod, perf, staging) are authoritative in the `understanding-agent-space-deployment-environment-aliases` memory. Always read that memory first when the user names an environment informally.
 
-When the user names an environment by its informal tier, map it to the literal `deployment_environment` value **before** querying. These aliases are authoritative:
+### Extended Cortex Environment Values
 
-| User says | Use `deployment_environment` |
-|---|---|
-| "dev", "development" | `rls03` |
-| "qa", "QA" | `rls04` |
-| "prod", "production" | `prod` |
-| "perf", "performance" | `rls07` |
-| "staging" | `staging` (Loki-only) |
-
-If the user gives a literal `rls0x`/env value, use it as-is and skip aliasing.
-
-### In Cortex
+Beyond the standard tiers, Cortex data may carry these additional `deployment_environment` values:
 
 | Tier | Environments |
 |---|---|
 | Production | `prod` |
 | QA | `rls04` |
 | Dev | `rls03` |
-| Staging / perf | `rls05`, `rls06`, `rls07` (perf) |
+| Staging / perf | `rls05`, `rls06`, `rls07` (perf), `rls08` (perf) |
 | Other dev | `dev`, `dev1`, `dev2`, `dev3`, `rlsdev`, `contractssf-dev`, `ephemeral`, `local` |
 | CCI-specific | `cci-beta-1030`, `cci-legacy-stage`, `cci-yama-beta-1030` |
 | Yama | `yama-dev-1100` |
@@ -160,12 +152,12 @@ query_prometheus(datasourceUid="cortex", expr='group by (__name__) ({service_nam
 
 | User asks about | Read this file |
 |---|---|
+| Investigation / RCA / "why did this break?" / root cause / incident — anything beyond a single query | `references/rca-playbook.md` (the five-pillar evidence search), then the per-signal files below |
 | Generic "what service is failing?" (no service named, no logs/metrics specified) | logs-first per "Failure triage" below — start with `references/loki-logql.md` |
 | LogQL, log labels, error logs, traceid extraction, raw logs | `references/loki-logql.md` |
 | PromQL, metrics, RED, latency, Kong/nginx 5xx, Kubernetes metrics | `references/mimir-promql.md` (check ingress rollout first — Kong vs nginx) |
 | Trace IDs, Tempo, TraceQL, deeplinks, correlation | `references/tempo-traceql.md` |
 | Long windows, 30 days, all errors over a week, timeout/truncation/max_samples | `references/wide-window-guard.md` |
-| Deep namespace detail — exact sample services, product areas, per-namespace counts, full LGTM component list | `references/catalog.md` (but prefer live MCP discovery) |
 | General triage flow or routing | stay in this file unless detail is needed |
 
 ## "Which service is failing?" — generic failure triage
